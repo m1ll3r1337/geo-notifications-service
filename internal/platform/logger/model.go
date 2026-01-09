@@ -52,3 +52,16 @@ type Events struct {
 	Warn  EventFn
 	Error EventFn
 }
+
+func ParseLogLevel(level string) Level {
+	switch level {
+	case "debug":
+		return LevelDebug
+	case "warn":
+		return LevelWarn
+	case "error":
+		return LevelError
+	default:
+		return LevelInfo
+	}
+}
