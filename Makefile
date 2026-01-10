@@ -1,3 +1,5 @@
+.PHONY: lint build run clean
+
 lint:
 	golangci-lint run
 

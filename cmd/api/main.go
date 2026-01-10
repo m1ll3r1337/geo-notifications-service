@@ -29,19 +29,19 @@ func main() {
 	log.BuildInfo(ctx)
 
 	srvCfg := app.Config{
-		LogLevel: cfg.Log.Level,
-		Addr:     cfg.HTTP.Addr,
+		Addr: cfg.HTTP.Addr,
 	}
 
 	// -------------------------------------------------------------------------
 	// Start API Service
-	s := app.NewServer(srvCfg, logger.NewStdLogger(log, logger.LevelError))
+	router := app.NewRouter(log, logLevel)
+	s := app.NewServer(srvCfg, router, logger.NewStdLogger(log, logger.LevelError))
 
 	serverErrors := make(chan error, 1)
 	shutdown := make(chan os.Signal, 1)
 	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 	go func() {
-		log.Info(ctx, "startup", "status", "api router started", "host", cfg.HTTP.Addr)
+		log.Info(ctx, "startup", "status", "api router started", "addr", cfg.HTTP.Addr)
 
 		serverErrors <- s.Start()
 	}()
@@ -51,7 +51,7 @@ func main() {
 
 	select {
 	case err := <-serverErrors:
-		log.Error(ctx, "startup", "status", "server error", "error", err)
+		log.Error(ctx, "startup", "status", "server failed to start", "error", err)
 
 	case sig := <-shutdown:
 		log.Info(ctx, "shutdown", "status", "shutdown started", "signal", sig)

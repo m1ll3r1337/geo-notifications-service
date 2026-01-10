@@ -111,6 +111,19 @@ func (log *Logger) Errorc(ctx context.Context, caller int, msg string, args ...a
 	log.write(ctx, LevelError, caller, msg, args...)
 }
 
+func (log *Logger) Log(ctx context.Context, level Level, msg string, args ...any) {
+	switch level {
+	case LevelDebug:
+		log.Debugc(ctx, 4, msg, args...)
+	case LevelWarn:
+		log.Warnc(ctx, 4, msg, args...)
+	case LevelError:
+		log.Errorc(ctx, 4, msg, args...)
+	default:
+		log.Infoc(ctx, 4, msg, args...)
+	}
+}
+
 func (log *Logger) write(ctx context.Context, level Level, caller int, msg string, args ...any) {
 	slogLevel := slog.Level(level)
 

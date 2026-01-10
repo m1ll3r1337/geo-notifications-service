@@ -1,3 +1,4 @@
+// Package app provides HTTP server setup and routing.
 package app
 
 import (
@@ -14,9 +15,7 @@ type Server struct {
 	router *gin.Engine
 }
 
-func NewServer(cfg Config, stdLog *log.Logger) *Server {
-	r := gin.Default()
-	setupRoutes(r)
+func NewServer(cfg Config, router *gin.Engine, stdLog *log.Logger) *Server {
 	s := Server{
 		server: &http.Server{
 			Addr:              cfg.Addr,
@@ -24,10 +23,10 @@ func NewServer(cfg Config, stdLog *log.Logger) *Server {
 			WriteTimeout:      10 * time.Second,
 			IdleTimeout:       60 * time.Second,
 			ReadHeaderTimeout: 15 * time.Second,
-			Handler:           r,
+			Handler:           router,
 			ErrorLog:          stdLog,
 		},
-		router: r,
+		router: router,
 	}
 	return &s
 }
@@ -41,6 +40,5 @@ func (s *Server) Shutdown(ctx context.Context) error {
 }
 
 func (s *Server) Close() error {
-	s.server.Close()
-	return nil
+	return s.server.Close()
 }

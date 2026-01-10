@@ -1,3 +1,4 @@
+// Package config handles environment-based configuration loading.
 package config
 
 import "github.com/kelseyhightower/envconfig"
