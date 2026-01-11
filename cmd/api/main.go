@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/m1ll3r1337/geo-notifications-service/internal/app"
+	"github.com/m1ll3r1337/geo-notifications-service/internal/http"
 	"github.com/m1ll3r1337/geo-notifications-service/internal/platform/config"
 	"github.com/m1ll3r1337/geo-notifications-service/internal/platform/logger"
 )
