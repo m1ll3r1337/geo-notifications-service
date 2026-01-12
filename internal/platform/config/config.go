@@ -1,7 +1,11 @@
 // Package config handles environment-based configuration loading.
 package config
 
-import "github.com/kelseyhightower/envconfig"
+import (
+	"time"
+
+	"github.com/kelseyhightower/envconfig"
+)
 
 type Config struct {
 	HTTP struct {
@@ -9,6 +13,14 @@ type Config struct {
 	}
 	Log struct {
 		Level string `default:"info"`
+	}
+	DB struct {
+		URL             string        `required:"true"`
+		MaxIdleConns    int           `default:"2"`
+		MaxOpenConns    int           `default:"10"`
+		ConnMaxLifetime time.Duration `default:"1h"`
+		ConnMaxIdleTime time.Duration `default:"0"`
+		PingTimeout     time.Duration `default:"5s"`
 	}
 }
 
