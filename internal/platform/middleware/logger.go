@@ -19,6 +19,9 @@ func GinStructuredLogger(l *logger.Logger, minLevel logger.Level) gin.HandlerFun
 		status := ctx.Writer.Status()
 		latency := time.Since(start)
 		size := ctx.Writer.Size()
+		if size < 0 {
+			size = 0
+		}
 
 		level := logger.LevelInfo
 		switch {
