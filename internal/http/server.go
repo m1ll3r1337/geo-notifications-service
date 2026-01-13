@@ -1,5 +1,5 @@
-// Package app provides HTTP server setup and routing.
-package app
+// Package http provides HTTP server setup and routing.
+package http
 
 import (
 	"context"

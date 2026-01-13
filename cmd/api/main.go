@@ -9,8 +9,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/m1ll3r1337/geo-notifications-service/internal/domain/incidents"
 	"github.com/m1ll3r1337/geo-notifications-service/internal/http"
+	"github.com/m1ll3r1337/geo-notifications-service/internal/http/handlers"
 	"github.com/m1ll3r1337/geo-notifications-service/internal/platform/config"
+	"github.com/m1ll3r1337/geo-notifications-service/internal/platform/db"
+	incidentsdb "github.com/m1ll3r1337/geo-notifications-service/internal/platform/db/incidents"
 	"github.com/m1ll3r1337/geo-notifications-service/internal/platform/logger"
 )
 
@@ -28,30 +32,47 @@ func main() {
 	log.Info(ctx, "startup", "GOMAXPROCS", runtime.GOMAXPROCS(0))
 	log.BuildInfo(ctx)
 
-	srvCfg := app.Config{
-		Addr: cfg.HTTP.Addr,
+	// --- DB ---
+	sqlDB, err := db.Open(ctx, db.Config{
+		URL:             cfg.DB.URL,
+		MaxIdleConns:    cfg.DB.MaxIdleConns,
+		MaxOpenConns:    cfg.DB.MaxOpenConns,
+		ConnMaxLifetime: cfg.DB.ConnMaxLifetime,
+		ConnMaxIdleTime: cfg.DB.ConnMaxIdleTime,
+		PingTimeout:     cfg.DB.PingTimeout,
+	})
+	if err != nil {
+		log.Error(ctx, "startup", "status", "db init failed", "error", err)
+		return
+	}
+	defer sqlDB.Close()
+
+	if err := db.StatusCheck(ctx, sqlDB); err != nil {
+		log.Error(ctx, "startup", "status", "db not ready", "error", err)
+		return
 	}
 
-	// -------------------------------------------------------------------------
-	// Start API Service
-	router := app.NewRouter(log, logLevel)
-	s := app.NewServer(srvCfg, router, logger.NewStdLogger(log, logger.LevelError))
+	// --- Incidents module wiring ---
+	incRepo := incidentsdb.New(sqlDB)
+	incSvc := incidents.NewService(incRepo)
+	incHandlers := handlers.NewIncidents(log, incSvc)
+
+	// --- HTTP ---
+	router := http.NewRouter(log, logLevel, incHandlers)
+	s := http.NewServer(http.Config{Addr: cfg.HTTP.Addr}, router, logger.NewStdLogger(log, logger.LevelError))
 
 	serverErrors := make(chan error, 1)
 	shutdown := make(chan os.Signal, 1)
 	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
-	go func() {
-		log.Info(ctx, "startup", "status", "api router started", "addr", cfg.HTTP.Addr)
 
+	go func() {
+		log.Info(ctx, "startup", "status", "server started", "addr", cfg.HTTP.Addr)
 		serverErrors <- s.Start()
 	}()
 
-	// -------------------------------------------------------------------------
-	// Shutdown
-
 	select {
 	case err := <-serverErrors:
-		log.Error(ctx, "startup", "status", "server failed to start", "error", err)
+		log.Error(ctx, "startup", "status", "server failed", "error", err)
 
 	case sig := <-shutdown:
 		log.Info(ctx, "shutdown", "status", "shutdown started", "signal", sig)
@@ -65,5 +86,4 @@ func main() {
 			_ = s.Close()
 		}
 	}
-
 }

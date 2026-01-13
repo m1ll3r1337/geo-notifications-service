@@ -3,13 +3,13 @@ package incidentsdb
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/jmoiron/sqlx"
 
 	"github.com/m1ll3r1337/geo-notifications-service/internal/domain/incidents"
+	dberrs "github.com/m1ll3r1337/geo-notifications-service/internal/platform/db/errs"
 )
 
 type Repository struct {
@@ -66,30 +66,31 @@ const selectIncidentCols = `
 `
 
 func (r *Repository) Create(ctx context.Context, in incidents.CreateIncident) (incidents.Incident, error) {
+	const op = "incidents.repo.create"
+
 	const q = `
-        INSERT INTO incidents (title, description, center, radius, active)
-        VALUES ($1, $2, ST_MakePoint($3, $4)::geography, $5, TRUE)
+        INSERT INTO incidents (title, description, center, radius)
+        VALUES ($1, $2, ST_MakePoint($3, $4)::geography, $5)
         RETURNING ` + selectIncidentCols + `;
     `
 
 	var row dbIncident
-	if err := r.db.GetContext(
-		ctx,
-		&row,
-		q,
+	if err := r.db.GetContext(ctx, &row, q,
 		in.Title,
 		nullString(in.Description),
 		in.Center.Lon,
 		in.Center.Lat,
 		in.Radius,
 	); err != nil {
-		return incidents.Incident{}, fmt.Errorf("incidents create: %w", err)
+		return incidents.Incident{}, dberrs.Map(err, op)
 	}
 
 	return row.toDomain(), nil
 }
 
 func (r *Repository) GetByID(ctx context.Context, id int64) (incidents.Incident, error) {
+	const op = "incidents.repo.get_by_id"
+
 	const q = `
         SELECT ` + selectIncidentCols + `
         FROM incidents
@@ -98,16 +99,15 @@ func (r *Repository) GetByID(ctx context.Context, id int64) (incidents.Incident,
 
 	var row dbIncident
 	if err := r.db.GetContext(ctx, &row, q, id); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return incidents.Incident{}, incidents.ErrNotFound
-		}
-		return incidents.Incident{}, fmt.Errorf("incidents get by id: %w", err)
+		return incidents.Incident{}, dberrs.Map(err, op)
 	}
 
 	return row.toDomain(), nil
 }
 
 func (r *Repository) List(ctx context.Context, f incidents.ListFilter) ([]incidents.Incident, error) {
+	const op = "incidents.repo.list"
+
 	limit := f.Limit
 	if limit <= 0 {
 		limit = 50
@@ -143,7 +143,7 @@ func (r *Repository) List(ctx context.Context, f incidents.ListFilter) ([]incide
 
 	var rows []dbIncident
 	if err := r.db.SelectContext(ctx, &rows, sb.String(), args...); err != nil {
-		return nil, fmt.Errorf("incidents list: %w", err)
+		return nil, dberrs.Map(err, op)
 	}
 
 	out := make([]incidents.Incident, 0, len(rows))
@@ -154,28 +154,25 @@ func (r *Repository) List(ctx context.Context, f incidents.ListFilter) ([]incide
 }
 
 func (r *Repository) Deactivate(ctx context.Context, id int64) error {
+	const op = "incidents.repo.deactivate"
+
 	const q = `
         UPDATE incidents
         SET active = FALSE, updated_at = NOW()
-        WHERE id = $1 AND active = TRUE;
+        WHERE id = $1 AND active = TRUE
+        RETURNING id;
     `
 
-	res, err := r.db.ExecContext(ctx, q, id)
-	if err != nil {
-		return fmt.Errorf("incidents deactivate: %w", err)
-	}
-
-	n, err := res.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("incidents deactivate rows affected: %w", err)
-	}
-	if n == 0 {
-		return incidents.ErrNotFound
+	var tmp int64
+	if err := r.db.GetContext(ctx, &tmp, q, id); err != nil {
+		return dberrs.Map(err, op)
 	}
 	return nil
 }
 
 func (r *Repository) Update(ctx context.Context, id int64, in incidents.UpdateIncident) (incidents.Incident, error) {
+	const op = "incidents.repo.update"
+
 	setParts := make([]string, 0, 6)
 	args := make([]any, 0, 8)
 
@@ -219,10 +216,7 @@ func (r *Repository) Update(ctx context.Context, id int64, in incidents.UpdateIn
 
 	var row dbIncident
 	if err := r.db.GetContext(ctx, &row, q, args...); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return incidents.Incident{}, incidents.ErrNotFound
-		}
-		return incidents.Incident{}, fmt.Errorf("incidents update: %w", err)
+		return incidents.Incident{}, dberrs.Map(err, op)
 	}
 
 	return row.toDomain(), nil
