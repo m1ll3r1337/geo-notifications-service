@@ -13,10 +13,10 @@ import (
 )
 
 type Repository struct {
-	db *sqlx.DB
+	db sqlx.ExtContext
 }
 
-func New(db *sqlx.DB) *Repository { return &Repository{db: db} }
+func New(db sqlx.ExtContext) *Repository { return &Repository{db: db} }
 
 type dbIncident struct {
 	ID          int64          `db:"id"`
@@ -75,7 +75,7 @@ func (r *Repository) Create(ctx context.Context, in incidents.CreateIncident) (i
     `
 
 	var row dbIncident
-	if err := r.db.GetContext(ctx, &row, q,
+	if err := sqlx.GetContext(ctx, r.db, &row, q,
 		in.Title,
 		nullString(in.Description),
 		in.Center.Lon,
@@ -98,7 +98,7 @@ func (r *Repository) GetByID(ctx context.Context, id int64) (incidents.Incident,
     `
 
 	var row dbIncident
-	if err := r.db.GetContext(ctx, &row, q, id); err != nil {
+	if err := sqlx.GetContext(ctx, r.db, &row, q, id); err != nil {
 		return incidents.Incident{}, dberrs.Map(err, op)
 	}
 
@@ -142,7 +142,7 @@ func (r *Repository) List(ctx context.Context, f incidents.ListFilter) ([]incide
 	sb.WriteString(fmt.Sprintf("%d", len(args)))
 
 	var rows []dbIncident
-	if err := r.db.SelectContext(ctx, &rows, sb.String(), args...); err != nil {
+	if err := sqlx.SelectContext(ctx, r.db, &rows, sb.String(), args...); err != nil {
 		return nil, dberrs.Map(err, op)
 	}
 
@@ -164,7 +164,7 @@ func (r *Repository) Deactivate(ctx context.Context, id int64) error {
     `
 
 	var tmp int64
-	if err := r.db.GetContext(ctx, &tmp, q, id); err != nil {
+	if err := sqlx.GetContext(ctx, r.db, &tmp, q, id); err != nil {
 		return dberrs.Map(err, op)
 	}
 	return nil
@@ -215,7 +215,7 @@ func (r *Repository) Update(ctx context.Context, id int64, in incidents.UpdateIn
     `, strings.Join(setParts, ", "), idPos, selectIncidentCols)
 
 	var row dbIncident
-	if err := r.db.GetContext(ctx, &row, q, args...); err != nil {
+	if err := sqlx.GetContext(ctx, r.db, &row, q, args...); err != nil {
 		return incidents.Incident{}, dberrs.Map(err, op)
 	}
 

@@ -35,7 +35,6 @@ func GetRequestID(c *gin.Context) string {
 func newRequestID() string {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {
-		// короткий, но детерминированный фоллбек, чтобы не возвращать пустое значение
 		return "00000000000000000000000000000000"
 	}
 	return hex.EncodeToString(b[:])

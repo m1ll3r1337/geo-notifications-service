@@ -19,3 +19,6 @@ migrate-down:
 
 migrate-version:
 	migrate -path ./migrations -database "$(GEO_DB_URL)" version
+
+test-integration:
+	go test -tags=integration ./... -count=1
