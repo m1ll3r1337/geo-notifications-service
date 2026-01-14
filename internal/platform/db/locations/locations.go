@@ -2,6 +2,7 @@ package locationsdb
 
 import (
 	"context"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 
@@ -14,6 +15,31 @@ type Repository struct {
 }
 
 func New(db *sqlx.DB) *Repository { return &Repository{db: db} }
+
+type dbNearbyIncident struct {
+	IncidentID  int64     `db:"incident_id"`
+	Title       string    `db:"title"`
+	Description string    `db:"description"`
+	Radius      int       `db:"radius"`
+	CenterLon   float64   `db:"center_lon"`
+	CenterLat   float64   `db:"center_lat"`
+	CreatedAt   time.Time `db:"created_at"`
+	UpdatedAt   time.Time `db:"updated_at"`
+	DistanceM   float64   `db:"distance_m"`
+}
+
+func (d dbNearbyIncident) toDomain() locations.NearbyIncident {
+	return locations.NearbyIncident{
+		IncidentID:     d.IncidentID,
+		DistanceMeters: d.DistanceM,
+		Title:          d.Title,
+		Description:    d.Description,
+		Center:         locations.Point{Lat: d.CenterLat, Lon: d.CenterLon},
+		Radius:         d.Radius,
+		CreatedAt:      d.CreatedAt,
+		UpdatedAt:      d.UpdatedAt,
+	}
+}
 
 func (r *Repository) FindNearby(ctx context.Context, p locations.Point, limit int) ([]locations.NearbyIncident, error) {
 	const op = "location.repo.find_nearby"
@@ -28,6 +54,13 @@ func (r *Repository) FindNearby(ctx context.Context, p locations.Point, limit in
 	const q = `
         SELECT
             i.id AS incident_id,
+            i.title AS title,
+            i.description AS description,
+            i.radius AS radius,
+            ST_X(i.center::geometry) AS center_lon,
+            ST_Y(i.center::geometry) AS center_lat,
+            i.created_at AS created_at,
+            i.updated_at AS updated_at,
             ST_Distance(i.center, ST_MakePoint($1, $2)::geography) AS distance_m
         FROM incidents i
         WHERE i.active = TRUE
@@ -36,41 +69,20 @@ func (r *Repository) FindNearby(ctx context.Context, p locations.Point, limit in
         LIMIT $3;
     `
 
-	rows := []struct {
-		IncidentID int64   `db:"incident_id"`
-		DistanceM  float64 `db:"distance_m"`
-	}{}
-
+	var rows []dbNearbyIncident
 	if err := sqlx.SelectContext(ctx, r.db, &rows, q, p.Lon, p.Lat, limit); err != nil {
 		return nil, dberrs.Map(err, op)
 	}
 
 	out := make([]locations.NearbyIncident, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, locations.NearbyIncident{
-			IncidentID:     row.IncidentID,
-			DistanceMeters: row.DistanceM,
-		})
+	for _, r := range rows {
+		out = append(out, r.toDomain())
 	}
 	return out, nil
 }
 
-func (r *Repository) RecordCheck(ctx context.Context, userID string, p locations.Point, incidentIDs []int64) (err error) {
-	const op = "location.repo.record_check"
-
-	tx, err := r.db.BeginTxx(ctx, nil)
-	if err != nil {
-		return dberrs.Map(err, op)
-	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-			return
-		}
-		if commitErr := tx.Commit(); commitErr != nil {
-			err = dberrs.Map(commitErr, op)
-		}
-	}()
+func (r *Repository) RecordCheck(ctx context.Context, userID string, p locations.Point, incidentIDs []int64) error {
+	const op = "locations.repo.record_check"
 
 	var checkID int64
 	const qCheck = `
@@ -78,18 +90,18 @@ func (r *Repository) RecordCheck(ctx context.Context, userID string, p locations
         VALUES ($1, ST_MakePoint($2, $3)::geography)
         RETURNING id;
     `
-	if err := tx.QueryRowxContext(ctx, qCheck, userID, p.Lon, p.Lat).Scan(&checkID); err != nil {
+	if err := sqlx.GetContext(ctx, r.db, &checkID, qCheck, userID, p.Lon, p.Lat); err != nil {
 		return dberrs.Map(err, op)
 	}
 
 	if len(incidentIDs) > 0 {
 		const qLink = `INSERT INTO location_check_incidents (check_id, incident_id) VALUES ($1, $2);`
 		for _, id := range incidentIDs {
-			if _, err := tx.ExecContext(ctx, qLink, checkID, id); err != nil {
+			if _, err := r.db.ExecContext(ctx, qLink, checkID, id); err != nil {
 				return dberrs.Map(err, op)
 			}
 		}
 	}
-	//TODO: worker outbox
+
 	return nil
 }
