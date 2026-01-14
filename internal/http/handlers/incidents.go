@@ -9,16 +9,14 @@ import (
 
 	"github.com/m1ll3r1337/geo-notifications-service/internal/domain/incidents"
 	"github.com/m1ll3r1337/geo-notifications-service/internal/errs"
-	"github.com/m1ll3r1337/geo-notifications-service/internal/platform/logger"
 )
 
 type Incidents struct {
-	log *logger.Logger
 	svc *incidents.Service
 }
 
-func NewIncidents(log *logger.Logger, svc *incidents.Service) *Incidents {
-	return &Incidents{log: log, svc: svc}
+func NewIncidents(svc *incidents.Service) *Incidents {
+	return &Incidents{svc: svc}
 }
 
 type pointDTO struct {
@@ -62,7 +60,7 @@ func (h *Incidents) Create(ctx *gin.Context) {
 
 	var req createIncidentRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
-		ctx.Error(errs.E(errs.KindInvalid, "INVALID_JSON", "http.incidents.create", "invalid json", nil, err))
+		ctx.Error(errs.E(errs.KindInvalid, "INVALID_JSON", op, "invalid json", nil, err))
 		return
 	}
 
@@ -88,7 +86,7 @@ func (h *Incidents) GetByID(ctx *gin.Context) {
 
 	id, err := strconv.ParseInt(ctx.Param("id"), 10, 64)
 	if err != nil || id <= 0 {
-		ctx.Error(errs.E(errs.KindInvalid, "INVALID_ID", "http.incidents.get_by_id", "invalid id", map[string]string{"id": "must be > 0"}, err))
+		ctx.Error(errs.E(errs.KindInvalid, "INVALID_ID", op, "invalid id", map[string]string{"id": "must be > 0"}, err))
 		return
 	}
 
@@ -137,13 +135,13 @@ func (h *Incidents) Update(ctx *gin.Context) {
 
 	id, err := strconv.ParseInt(ctx.Param("id"), 10, 64)
 	if err != nil || id <= 0 {
-		ctx.Error(errs.E(errs.KindInvalid, "INVALID_ID", "http.incidents.update", "invalid id", map[string]string{"id": "must be > 0"}, err))
+		ctx.Error(errs.E(errs.KindInvalid, "INVALID_ID", op, "invalid id", map[string]string{"id": "must be > 0"}, err))
 		return
 	}
 
 	var req updateIncidentRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
-		ctx.Error(errs.E(errs.KindInvalid, "INVALID_JSON", "http.incidents.update", "invalid json", nil, err))
+		ctx.Error(errs.E(errs.KindInvalid, "INVALID_JSON", op, "invalid json", nil, err))
 		return
 	}
 
@@ -171,7 +169,7 @@ func (h *Incidents) Deactivate(ctx *gin.Context) {
 
 	id, err := strconv.ParseInt(ctx.Param("id"), 10, 64)
 	if err != nil || id <= 0 {
-		ctx.Error(errs.E(errs.KindInvalid, "INVALID_ID", "http.incidents.deactivate", "invalid id", map[string]string{"id": "must be > 0"}, err))
+		ctx.Error(errs.E(errs.KindInvalid, "INVALID_ID", op, "invalid id", map[string]string{"id": "must be > 0"}, err))
 		return
 	}
 

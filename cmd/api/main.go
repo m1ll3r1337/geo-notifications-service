@@ -10,11 +10,13 @@ import (
 	"time"
 
 	"github.com/m1ll3r1337/geo-notifications-service/internal/domain/incidents"
+	"github.com/m1ll3r1337/geo-notifications-service/internal/domain/locations"
 	"github.com/m1ll3r1337/geo-notifications-service/internal/http"
 	"github.com/m1ll3r1337/geo-notifications-service/internal/http/handlers"
 	"github.com/m1ll3r1337/geo-notifications-service/internal/platform/config"
 	"github.com/m1ll3r1337/geo-notifications-service/internal/platform/db"
 	incidentsdb "github.com/m1ll3r1337/geo-notifications-service/internal/platform/db/incidents"
+	locationsdb "github.com/m1ll3r1337/geo-notifications-service/internal/platform/db/locations"
 	"github.com/m1ll3r1337/geo-notifications-service/internal/platform/logger"
 )
 
@@ -55,10 +57,15 @@ func main() {
 	// --- Incidents module wiring ---
 	incRepo := incidentsdb.New(sqlDB)
 	incSvc := incidents.NewService(incRepo)
-	incHandlers := handlers.NewIncidents(log, incSvc)
+	incHandlers := handlers.NewIncidents(incSvc)
+
+	// --- Location module wiring ---
+	locRepo := locationsdb.New(sqlDB)
+	locSvc := locations.NewService(locRepo)
+	locHandlers := handlers.NewLocations(locSvc)
 
 	// --- HTTP ---
-	router := http.NewRouter(log, logLevel, incHandlers)
+	router := http.NewRouter(log, logLevel, incHandlers, locHandlers)
 	s := http.NewServer(http.Config{Addr: cfg.HTTP.Addr}, router, logger.NewStdLogger(log, logger.LevelError))
 
 	serverErrors := make(chan error, 1)
