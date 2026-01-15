@@ -239,7 +239,7 @@ func (d dbNearbyIncident) toDomain() incidents.NearbyIncident {
 }
 
 func (r *Repository) FindNearby(ctx context.Context, p incidents.Point, limit int) ([]incidents.NearbyIncident, error) {
-	const op = "location.repo.find_nearby"
+	const op = "incidents.repo.find_nearby"
 	const q = `
         SELECT
             i.id AS incident_id,
@@ -270,7 +270,7 @@ func (r *Repository) FindNearby(ctx context.Context, p incidents.Point, limit in
 	return out, nil
 }
 
-func (r *Repository) RecordCheck(ctx context.Context, userID string, p incidents.Point, incidentIDs []int64) error {
+func (r *Repository) RecordCheck(ctx context.Context, userID string, p incidents.Point, incidentIDs []int64) (int64, error) {
 	const op = "incidents.repo.record_check"
 
 	var checkID int64
@@ -280,17 +280,20 @@ func (r *Repository) RecordCheck(ctx context.Context, userID string, p incidents
         RETURNING id;
     `
 	if err := sqlx.GetContext(ctx, r.exec, &checkID, qCheck, userID, p.Lon, p.Lat); err != nil {
-		return dberrs.Map(err, op)
+		return 0, dberrs.Map(err, op)
 	}
 
 	if len(incidentIDs) > 0 {
-		const qLink = `INSERT INTO location_check_incidents (check_id, incident_id) VALUES ($1, $2);`
+		const qLinkBatch = `
+            INSERT INTO location_check_incidents (check_id, incident_id)
+            SELECT $1, unnest($2::bigint[]);
+        `
 		for _, id := range incidentIDs {
-			if _, err := r.exec.ExecContext(ctx, qLink, checkID, id); err != nil {
-				return dberrs.Map(err, op)
+			if _, err := r.exec.ExecContext(ctx, qLinkBatch, checkID, id); err != nil {
+				return 0, dberrs.Map(err, op)
 			}
 		}
 	}
 
-	return nil
+	return checkID, nil
 }
