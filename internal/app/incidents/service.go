@@ -2,26 +2,45 @@ package incidents
 
 import (
 	"context"
+	"encoding/json"
+	"time"
 
 	"github.com/m1ll3r1337/geo-notifications-service/internal/domain/incidents"
 	"github.com/m1ll3r1337/geo-notifications-service/internal/errs"
 )
 
-type Repository interface {
+type IncidentsRepository interface {
 	Create(ctx context.Context, in incidents.CreateIncident) (incidents.Incident, error)
 	GetByID(ctx context.Context, id int64) (incidents.Incident, error)
 	List(ctx context.Context, f incidents.ListFilter) ([]incidents.Incident, error)
 	Update(ctx context.Context, id int64, in incidents.UpdateIncident) (incidents.Incident, error)
 	Deactivate(ctx context.Context, id int64) error
 	FindNearby(ctx context.Context, p incidents.Point, limit int) ([]incidents.NearbyIncident, error)
-	RecordCheck(ctx context.Context, userID string, p incidents.Point, incidentIDs []int64) error
+}
+
+type Checker interface {
+	RecordCheck(ctx context.Context, userID string, p incidents.Point, incidentIDs []int64) (int64, error)
+}
+
+type OutboxRepository interface {
+	Enqueue(ctx context.Context, eventType string, payloadJSON string, nextAttemptAt time.Time) error
+}
+
+type TxRunner interface {
+	WithinTx(ctx context.Context, fn func(ctx context.Context, checker Checker, outbox OutboxRepository) error) error
 }
 
 type Service struct {
-	repo Repository
+	incRepo IncidentsRepository
+	tx      TxRunner
 }
 
-func NewService(repo Repository) *Service { return &Service{repo: repo} }
+func NewService(incRepo IncidentsRepository, tx TxRunner) *Service {
+	return &Service{
+		incRepo: incRepo,
+		tx:      tx,
+	}
+}
 
 func (s *Service) Create(ctx context.Context, cmd incidents.CreateIncident) (incidents.Incident, error) {
 	const op = "incidents.service.create"
@@ -30,7 +49,7 @@ func (s *Service) Create(ctx context.Context, cmd incidents.CreateIncident) (inc
 		return incidents.Incident{}, errs.Wrap(op, err)
 	}
 
-	inc, err := s.repo.Create(ctx, cmd)
+	inc, err := s.incRepo.Create(ctx, cmd)
 	if err != nil {
 		return incidents.Incident{}, errs.Wrap(op, err)
 	}
@@ -45,7 +64,7 @@ func (s *Service) GetByID(ctx context.Context, id int64) (incidents.Incident, er
 		return incidents.Incident{}, errs.E(errs.KindInvalid, "INVALID_ID", op, "invalid id", map[string]string{"id": "must be > 0"}, nil)
 	}
 
-	inc, err := s.repo.GetByID(ctx, id)
+	inc, err := s.incRepo.GetByID(ctx, id)
 	if err != nil {
 		return incidents.Incident{}, errs.Wrap(op, err)
 	}
@@ -63,7 +82,7 @@ func (s *Service) List(ctx context.Context, f incidents.ListFilter) ([]incidents
 		f.Offset = 0
 	}
 
-	items, err := s.repo.List(ctx, f)
+	items, err := s.incRepo.List(ctx, f)
 	if err != nil {
 		return nil, errs.Wrap(op, err)
 	}
@@ -81,7 +100,7 @@ func (s *Service) Update(ctx context.Context, id int64, cmd incidents.UpdateInci
 		return incidents.Incident{}, errs.Wrap(op, err)
 	}
 
-	inc, err := s.repo.Update(ctx, id, cmd)
+	inc, err := s.incRepo.Update(ctx, id, cmd)
 	if err != nil {
 		return incidents.Incident{}, errs.Wrap(op, err)
 	}
@@ -96,35 +115,67 @@ func (s *Service) Deactivate(ctx context.Context, id int64) error {
 		return errs.E(errs.KindInvalid, "INVALID_ID", op, "invalid id", map[string]string{"id": "must be > 0"}, nil)
 	}
 
-	if err := s.repo.Deactivate(ctx, id); err != nil {
+	if err := s.incRepo.Deactivate(ctx, id); err != nil {
 		return errs.Wrap(op, err)
 	}
 
 	return nil
 }
 
-func (s *Service) FindNearby(ctx context.Context, cmd incidents.CheckCommand) ([]incidents.NearbyIncident, error) {
-	const op = "location.service.find_nearby"
+type CheckResult struct {
+	Incidents []incidents.NearbyIncident
+	Count     int
+}
+
+func (s *Service) CheckAndRecord(ctx context.Context, cmd incidents.CheckCommand) (*CheckResult, error) {
+	const op = "incidents.app.check_and_record"
 
 	if err := cmd.Validate(); err != nil {
 		return nil, errs.Wrap(op, err)
 	}
 
-	items, err := s.repo.FindNearby(ctx, cmd.Point, cmd.Limit)
+	inc, err := s.incRepo.FindNearby(ctx, cmd.Point, cmd.Limit)
+	if err != nil {
+		return nil, errs.Wrap(op+".find_nearby", err)
+	}
+
+	incidentIDs := make([]int64, 0, len(inc))
+	for _, it := range inc {
+		incidentIDs = append(incidentIDs, it.IncidentID)
+	}
+
+	err = s.tx.WithinTx(ctx, func(ctx context.Context, checker Checker, outbox OutboxRepository) error {
+		checkID, err := checker.RecordCheck(ctx, cmd.UserID, cmd.Point, incidentIDs)
+		if err != nil {
+			return errs.Wrap(op+".record_check", err)
+		}
+
+		if len(incidentIDs) == 0 {
+			return nil
+		}
+
+		ev := incidents.CheckCompleted{
+			CheckID:     checkID,
+			UserID:      cmd.UserID,
+			Point:       cmd.Point,
+			IncidentIDs: incidentIDs,
+			OccurredAt:  time.Now(),
+		}
+
+		b, err := json.Marshal(ev)
+		if err != nil {
+			return errs.Wrap(op+".marshal_event", err)
+		}
+
+		if err := outbox.Enqueue(ctx, "location_check", string(b), time.Now()); err != nil {
+			return errs.Wrap(op+".enqueue_outbox", err)
+		}
+
+		return nil
+	})
 	if err != nil {
 		return nil, errs.Wrap(op, err)
 	}
-	return items, nil
-}
 
-func (s *Service) RecordCheck(ctx context.Context, userID string, p incidents.Point, incidentIDs []int64) error {
-	const op = "location.service.record_check"
-
-	if err := p.Validate(op); err != nil {
-		return err
-	}
-	if err := s.repo.RecordCheck(ctx, userID, p, incidentIDs); err != nil {
-		return errs.Wrap(op, err)
-	}
-	return nil
+	return &CheckResult{Incidents: inc, Count: len(inc)}, nil
 }

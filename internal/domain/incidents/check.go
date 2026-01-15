@@ -13,22 +13,19 @@ type CheckCommand struct {
 }
 
 func (c CheckCommand) Validate() error {
-	const op = "location.model.validate_check"
-
-	fields := map[string]string{}
+	const op = "command.check.validate"
 
 	if strings.TrimSpace(c.UserID) == "" {
-		fields["user_id"] = "is required"
-	}
-	if c.Limit < 0 {
-		fields["limit"] = "must be >= 0"
+		return errs.E(errs.KindInvalid, "INVALID_USER_ID", op, "user_id is required", map[string]string{"user_id": "is required"}, nil)
 	}
 	if err := c.Point.Validate(op); err != nil {
 		return err
 	}
-
-	if len(fields) > 0 {
-		return errs.E(errs.KindInvalid, "CHECK_INVALID", op, "invalid request", fields, nil)
+	if c.Limit < 0 {
+		return errs.E(errs.KindInvalid, "INVALID_LIMIT", op, "limit must be >= 0", map[string]string{"limit": "must be >= 0"}, nil)
+	}
+	if c.Limit > 500 {
+		return errs.E(errs.KindInvalid, "INVALID_LIMIT", op, "limit must be <= 500", map[string]string{"limit": "must be <= 500"}, nil)
 	}
 	return nil
 }
