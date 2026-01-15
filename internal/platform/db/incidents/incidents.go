@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 
@@ -13,10 +14,10 @@ import (
 )
 
 type Repository struct {
-	db sqlx.ExtContext
+	exec sqlx.ExtContext
 }
 
-func New(db sqlx.ExtContext) *Repository { return &Repository{db: db} }
+func New(db sqlx.ExtContext) *Repository { return &Repository{exec: db} }
 
 type dbIncident struct {
 	ID          int64          `db:"id"`
@@ -26,8 +27,8 @@ type dbIncident struct {
 	CenterLon   float64        `db:"center_lon"`
 	Radius      int            `db:"radius"`
 	Active      bool           `db:"active"`
-	CreatedAt   sql.NullTime   `db:"created_at"`
-	UpdatedAt   sql.NullTime   `db:"updated_at"`
+	CreatedAt   time.Time      `db:"created_at"`
+	UpdatedAt   time.Time      `db:"updated_at"`
 }
 
 func (d dbIncident) toDomain() incidents.Incident {
@@ -43,12 +44,6 @@ func (d dbIncident) toDomain() incidents.Incident {
 	}
 	if d.Description.Valid {
 		out.Description = d.Description.String
-	}
-	if d.CreatedAt.Valid {
-		out.CreatedAt = d.CreatedAt.Time
-	}
-	if d.UpdatedAt.Valid {
-		out.UpdatedAt = d.UpdatedAt.Time
 	}
 	return out
 }
@@ -75,7 +70,7 @@ func (r *Repository) Create(ctx context.Context, in incidents.CreateIncident) (i
     `
 
 	var row dbIncident
-	if err := sqlx.GetContext(ctx, r.db, &row, q,
+	if err := sqlx.GetContext(ctx, r.exec, &row, q,
 		in.Title,
 		nullString(in.Description),
 		in.Center.Lon,
@@ -98,7 +93,7 @@ func (r *Repository) GetByID(ctx context.Context, id int64) (incidents.Incident,
     `
 
 	var row dbIncident
-	if err := sqlx.GetContext(ctx, r.db, &row, q, id); err != nil {
+	if err := sqlx.GetContext(ctx, r.exec, &row, q, id); err != nil {
 		return incidents.Incident{}, dberrs.Map(err, op)
 	}
 
@@ -107,23 +102,12 @@ func (r *Repository) GetByID(ctx context.Context, id int64) (incidents.Incident,
 
 func (r *Repository) List(ctx context.Context, f incidents.ListFilter) ([]incidents.Incident, error) {
 	const op = "incidents.repo.list"
-
-	limit := f.Limit
-	if limit <= 0 {
-		limit = 50
-	}
-	if limit > 500 {
-		limit = 500
-	}
-	offset := f.Offset
-	if offset < 0 {
-		offset = 0
-	}
-
 	var (
 		sb   strings.Builder
 		args []any
 	)
+	limit := f.Limit
+	offset := f.Offset
 
 	sb.WriteString(`SELECT `)
 	sb.WriteString(selectIncidentCols)
@@ -142,7 +126,7 @@ func (r *Repository) List(ctx context.Context, f incidents.ListFilter) ([]incide
 	sb.WriteString(fmt.Sprintf("%d", len(args)))
 
 	var rows []dbIncident
-	if err := sqlx.SelectContext(ctx, r.db, &rows, sb.String(), args...); err != nil {
+	if err := sqlx.SelectContext(ctx, r.exec, &rows, sb.String(), args...); err != nil {
 		return nil, dberrs.Map(err, op)
 	}
 
@@ -164,7 +148,7 @@ func (r *Repository) Deactivate(ctx context.Context, id int64) error {
     `
 
 	var tmp int64
-	if err := sqlx.GetContext(ctx, r.db, &tmp, q, id); err != nil {
+	if err := sqlx.GetContext(ctx, r.exec, &tmp, q, id); err != nil {
 		return dberrs.Map(err, op)
 	}
 	return nil
@@ -215,7 +199,7 @@ func (r *Repository) Update(ctx context.Context, id int64, in incidents.UpdateIn
     `, strings.Join(setParts, ", "), idPos, selectIncidentCols)
 
 	var row dbIncident
-	if err := sqlx.GetContext(ctx, r.db, &row, q, args...); err != nil {
+	if err := sqlx.GetContext(ctx, r.exec, &row, q, args...); err != nil {
 		return incidents.Incident{}, dberrs.Map(err, op)
 	}
 
@@ -227,4 +211,86 @@ func nullString(s string) sql.NullString {
 		return sql.NullString{Valid: false}
 	}
 	return sql.NullString{String: s, Valid: true}
+}
+
+type dbNearbyIncident struct {
+	IncidentID  int64     `db:"incident_id"`
+	Title       string    `db:"title"`
+	Description string    `db:"description"`
+	Radius      int       `db:"radius"`
+	CenterLon   float64   `db:"center_lon"`
+	CenterLat   float64   `db:"center_lat"`
+	CreatedAt   time.Time `db:"created_at"`
+	UpdatedAt   time.Time `db:"updated_at"`
+	DistanceM   float64   `db:"distance_m"`
+}
+
+func (d dbNearbyIncident) toDomain() incidents.NearbyIncident {
+	return incidents.NearbyIncident{
+		IncidentID:     d.IncidentID,
+		DistanceMeters: d.DistanceM,
+		Title:          d.Title,
+		Description:    d.Description,
+		Center:         incidents.Point{Lat: d.CenterLat, Lon: d.CenterLon},
+		Radius:         d.Radius,
+		CreatedAt:      d.CreatedAt,
+		UpdatedAt:      d.UpdatedAt,
+	}
+}
+
+func (r *Repository) FindNearby(ctx context.Context, p incidents.Point, limit int) ([]incidents.NearbyIncident, error) {
+	const op = "location.repo.find_nearby"
+	const q = `
+        SELECT
+            i.id AS incident_id,
+            i.title AS title,
+            i.description AS description,
+            i.radius AS radius,
+            ST_X(i.center::geometry) AS center_lon,
+            ST_Y(i.center::geometry) AS center_lat,
+            i.created_at AS created_at,
+            i.updated_at AS updated_at,
+            ST_Distance(i.center, ST_MakePoint($1, $2)::geography) AS distance_m
+        FROM incidents i
+        WHERE i.active = TRUE
+          AND ST_DWithin(i.center, ST_MakePoint($1, $2)::geography, i.radius)
+        ORDER BY distance_m ASC
+        LIMIT $3;
+    `
+
+	var rows []dbNearbyIncident
+	if err := sqlx.SelectContext(ctx, r.exec, &rows, q, p.Lon, p.Lat, limit); err != nil {
+		return nil, dberrs.Map(err, op)
+	}
+
+	out := make([]incidents.NearbyIncident, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, r.toDomain())
+	}
+	return out, nil
+}
+
+func (r *Repository) RecordCheck(ctx context.Context, userID string, p incidents.Point, incidentIDs []int64) error {
+	const op = "incidents.repo.record_check"
+
+	var checkID int64
+	const qCheck = `
+        INSERT INTO location_checks (user_id, location)
+        VALUES ($1, ST_MakePoint($2, $3)::geography)
+        RETURNING id;
+    `
+	if err := sqlx.GetContext(ctx, r.exec, &checkID, qCheck, userID, p.Lon, p.Lat); err != nil {
+		return dberrs.Map(err, op)
+	}
+
+	if len(incidentIDs) > 0 {
+		const qLink = `INSERT INTO location_check_incidents (check_id, incident_id) VALUES ($1, $2);`
+		for _, id := range incidentIDs {
+			if _, err := r.exec.ExecContext(ctx, qLink, checkID, id); err != nil {
+				return dberrs.Map(err, op)
+			}
+		}
+	}
+
+	return nil
 }

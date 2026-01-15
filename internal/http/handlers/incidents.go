@@ -7,19 +7,20 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/m1ll3r1337/geo-notifications-service/internal/domain/incidents"
+	incidentsapp "github.com/m1ll3r1337/geo-notifications-service/internal/app/incidents"
+	incidentsdom "github.com/m1ll3r1337/geo-notifications-service/internal/domain/incidents"
 	"github.com/m1ll3r1337/geo-notifications-service/internal/errs"
 )
 
 type Incidents struct {
-	svc *incidents.Service
+	svc *incidentsapp.Service
 }
 
-func NewIncidents(svc *incidents.Service) *Incidents {
+func NewIncidents(svc *incidentsapp.Service) *Incidents {
 	return &Incidents{svc: svc}
 }
 
-type pointDTO struct {
+type point struct {
 	Lat float64 `json:"lat" binding:"required"`
 	Lon float64 `json:"lon" binding:"required"`
 }
@@ -28,19 +29,19 @@ type incidentResponse struct {
 	ID          int64     `json:"id"`
 	Title       string    `json:"title"`
 	Description string    `json:"description,omitempty"`
-	Center      pointDTO  `json:"center"`
+	Center      point     `json:"center"`
 	Radius      int       `json:"radius"`
 	Active      bool      `json:"active"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
-func toIncidentResponse(in incidents.Incident) incidentResponse {
+func toIncidentResponse(in incidentsdom.Incident) incidentResponse {
 	return incidentResponse{
 		ID:          in.ID,
 		Title:       in.Title,
 		Description: in.Description,
-		Center:      pointDTO{Lat: in.Center.Lat, Lon: in.Center.Lon},
+		Center:      point{Lat: in.Center.Lat, Lon: in.Center.Lon},
 		Radius:      in.Radius,
 		Active:      in.Active,
 		CreatedAt:   in.CreatedAt,
@@ -49,10 +50,10 @@ func toIncidentResponse(in incidents.Incident) incidentResponse {
 }
 
 type createIncidentRequest struct {
-	Title       string   `json:"title" binding:"required"`
-	Description string   `json:"description"`
-	Center      pointDTO `json:"center" binding:"required"`
-	Radius      int      `json:"radius" binding:"required"`
+	Title       string `json:"title" binding:"required"`
+	Description string `json:"description"`
+	Center      point  `json:"center" binding:"required"`
+	Radius      int    `json:"radius" binding:"required"`
 }
 
 func (h *Incidents) Create(ctx *gin.Context) {
@@ -64,10 +65,10 @@ func (h *Incidents) Create(ctx *gin.Context) {
 		return
 	}
 
-	inc, err := h.svc.Create(ctx.Request.Context(), incidents.CreateIncident{
+	inc, err := h.svc.Create(ctx, incidentsdom.CreateIncident{
 		Title:       req.Title,
 		Description: req.Description,
-		Center: incidents.Point{
+		Center: incidentsdom.Point{
 			Lat: req.Center.Lat,
 			Lon: req.Center.Lon,
 		},
@@ -90,7 +91,7 @@ func (h *Incidents) GetByID(ctx *gin.Context) {
 		return
 	}
 
-	inc, err := h.svc.GetByID(ctx.Request.Context(), id)
+	inc, err := h.svc.GetByID(ctx, id)
 	if err != nil {
 		ctx.Error(err)
 		return
@@ -106,7 +107,7 @@ func (h *Incidents) List(ctx *gin.Context) {
 	offset, _ := strconv.Atoi(ctx.DefaultQuery("offset", "0"))
 	activeOnly, _ := strconv.ParseBool(ctx.DefaultQuery("active_only", "true"))
 
-	items, err := h.svc.List(ctx.Request.Context(), incidents.ListFilter{
+	items, err := h.svc.List(ctx, incidentsdom.ListFilter{
 		Limit:      limit,
 		Offset:     offset,
 		ActiveOnly: activeOnly,
@@ -124,10 +125,10 @@ func (h *Incidents) List(ctx *gin.Context) {
 }
 
 type updateIncidentRequest struct {
-	Title       *string   `json:"title"`
-	Description *string   `json:"description"`
-	Center      *pointDTO `json:"center"`
-	Radius      *int      `json:"radius"`
+	Title       *string `json:"title"`
+	Description *string `json:"description"`
+	Center      *point  `json:"center"`
+	Radius      *int    `json:"radius"`
 }
 
 func (h *Incidents) Update(ctx *gin.Context) {
@@ -145,12 +146,12 @@ func (h *Incidents) Update(ctx *gin.Context) {
 		return
 	}
 
-	var center *incidents.Point
+	var center *incidentsdom.Point
 	if req.Center != nil {
-		center = &incidents.Point{Lat: req.Center.Lat, Lon: req.Center.Lon}
+		center = &incidentsdom.Point{Lat: req.Center.Lat, Lon: req.Center.Lon}
 	}
 
-	inc, err := h.svc.Update(ctx.Request.Context(), id, incidents.UpdateIncident{
+	inc, err := h.svc.Update(ctx.Request.Context(), id, incidentsdom.UpdateIncident{
 		Title:       req.Title,
 		Description: req.Description,
 		Center:      center,
@@ -179,4 +180,72 @@ func (h *Incidents) Deactivate(ctx *gin.Context) {
 	}
 
 	ctx.Status(http.StatusNoContent)
+}
+
+type locationCheckRequest struct {
+	UserID   string `json:"user_id" binding:"required"`
+	Location point  `json:"location" binding:"required"`
+	Limit    int    `json:"limit"`
+}
+
+type nearbyIncident struct {
+	IncidentID     int64   `json:"incident_id"`
+	DistanceMeters float64 `json:"distance_meters"`
+	Title          string  `json:"title"`
+	Description    string  `json:"description"`
+
+	Center point `json:"center"`
+	Radius int   `json:"radius"` // meters
+
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type locationCheckResponse struct {
+	Count     int              `json:"count"`
+	Incidents []nearbyIncident `json:"incidents"`
+}
+
+func (h *Incidents) Check(ctx *gin.Context) {
+	const op = "location.http.check"
+
+	var req locationCheckRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.Error(errs.E(errs.KindInvalid, "INVALID_JSON", op, "invalid json", nil, err))
+		return
+	}
+
+	cmd := incidentsdom.CheckCommand{
+		UserID: req.UserID,
+		Point:  incidentsdom.Point{Lat: req.Location.Lat, Lon: req.Location.Lon},
+		Limit:  req.Limit,
+	}
+
+	items, err := h.svc.FindNearby(ctx.Request.Context(), cmd)
+	if err != nil {
+		ctx.Error(err)
+		return
+	}
+
+	httpIncidents := make([]nearbyIncident, 0, len(items))
+	for _, item := range items {
+		httpIncidents = append(httpIncidents, nearbyIncident{
+			IncidentID:     item.IncidentID,
+			DistanceMeters: item.DistanceMeters,
+			Title:          item.Title,
+			Description:    item.Description,
+			Center: point{
+				Lat: item.Center.Lat,
+				Lon: item.Center.Lon,
+			},
+			Radius:    item.Radius,
+			CreatedAt: item.CreatedAt,
+			UpdatedAt: item.UpdatedAt,
+		})
+	}
+
+	ctx.JSON(http.StatusOK, locationCheckResponse{
+		Count:     len(items),
+		Incidents: httpIncidents,
+	})
 }
