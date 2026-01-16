@@ -39,8 +39,10 @@ func (d dbIncident) toDomain() incidents.Incident {
 			Lat: d.CenterLat,
 			Lon: d.CenterLon,
 		},
-		Radius: d.Radius,
-		Active: d.Active,
+		Radius:    d.Radius,
+		Active:    d.Active,
+		CreatedAt: d.CreatedAt,
+		UpdatedAt: d.UpdatedAt,
 	}
 	if d.Description.Valid {
 		out.Description = d.Description.String
