@@ -80,7 +80,7 @@ func main() {
 	incHandlers := handlers.NewIncidents(incSvc)
 
 	// --- HTTP ---
-	router := http.NewRouter(log, logLevel, incHandlers)
+	router := http.NewRouter(log, logLevel, incHandlers, cfg.Security.APIKey)
 	s := http.NewServer(http.Config{Addr: cfg.HTTP.Addr}, router, logger.NewStdLogger(log, logger.LevelError))
 
 	serverErrors := make(chan error, 1)

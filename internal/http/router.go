@@ -8,7 +8,7 @@ import (
 	"github.com/m1ll3r1337/geo-notifications-service/internal/platform/middleware"
 )
 
-func NewRouter(log *logger.Logger, level logger.Level, incidents *handlers.Incidents) *gin.Engine {
+func NewRouter(log *logger.Logger, level logger.Level, incidents *handlers.Incidents, apiKey string) *gin.Engine {
 	if level == logger.LevelDebug {
 		gin.SetMode(gin.DebugMode)
 	} else {
@@ -23,19 +23,23 @@ func NewRouter(log *logger.Logger, level logger.Level, incidents *handlers.Incid
 	r.Use(middleware.Error(log))
 	r.Use(middleware.Recovery(log))
 
-	setupRoutes(r, incidents)
+	setupRoutes(r, incidents, apiKey)
 	return r
 }
 
-func setupRoutes(r *gin.Engine, incidents *handlers.Incidents) {
+func setupRoutes(r *gin.Engine, incidents *handlers.Incidents, apiKey string) {
 	v1 := r.Group("/api/v1")
-	{
-		v1.POST("/incidents", incidents.Create)
-		v1.GET("/incidents", incidents.List)
-		v1.GET("/incidents/:id", incidents.GetByID)
-		v1.PATCH("/incidents/:id", incidents.Update)
-		v1.DELETE("/incidents/:id", incidents.Deactivate)
 
-		v1.POST("/location/check", incidents.Check)
+	inc := v1.Group("/incidents", middleware.APIKey(apiKey))
+	{
+		inc.POST("", incidents.Create)
+		inc.GET("", incidents.List)
+		inc.GET("/:id", incidents.GetByID)
+		inc.PUT("/:id", incidents.Update)
+		inc.PATCH("/:id", incidents.Update)
+		inc.DELETE("/:id", incidents.Deactivate)
 	}
+
+	v1.POST("/location/check", incidents.Check)
+
 }

@@ -28,12 +28,18 @@ type Config struct {
 		DB       int           `default:"0"`
 		Timeout  time.Duration `default:"5s"`
 	}
+	Security struct {
+		APIKey string `default:"secret"`
+	}
+	Stats struct {
+		WindowMinutes int `default:"60"`
+	}
 	Workers struct {
 		Webhook struct {
 			Stream   string `default:"webhook_events"`
 			Group    string `default:"webhook_group"`
 			Consumer string `default:"webhook_consumer"`
-			URL      string `default:"http://localhost:3000/webhook"`
+			URL      string `default:"http://localhost:9090/webhook"`
 		}
 		OutboxRelay struct {
 			Stream string `default:"webhook_events"`
