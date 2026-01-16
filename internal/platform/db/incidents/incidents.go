@@ -288,10 +288,8 @@ func (r *Repository) RecordCheck(ctx context.Context, userID string, p incidents
             INSERT INTO location_check_incidents (check_id, incident_id)
             SELECT $1, unnest($2::bigint[]);
         `
-		for _, id := range incidentIDs {
-			if _, err := r.exec.ExecContext(ctx, qLinkBatch, checkID, id); err != nil {
-				return 0, dberrs.Map(err, op)
-			}
+		if _, err := r.exec.ExecContext(ctx, qLinkBatch, checkID, incidentIDs); err != nil {
+			return 0, dberrs.Map(err, op)
 		}
 	}
 
