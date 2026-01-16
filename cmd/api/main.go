@@ -15,6 +15,8 @@ import (
 	"github.com/m1ll3r1337/geo-notifications-service/internal/platform/config"
 	"github.com/m1ll3r1337/geo-notifications-service/internal/platform/db"
 	incidentsdb "github.com/m1ll3r1337/geo-notifications-service/internal/platform/db/incidents"
+	"github.com/m1ll3r1337/geo-notifications-service/internal/platform/db/txrunner"
+	"github.com/m1ll3r1337/geo-notifications-service/internal/platform/db/uow"
 	"github.com/m1ll3r1337/geo-notifications-service/internal/platform/logger"
 )
 
@@ -54,7 +56,9 @@ func main() {
 
 	// --- Incidents module wiring ---
 	incRepo := incidentsdb.New(sqlDB)
-	incSvc := incidents.NewService(incRepo)
+	incEow := uow.New(sqlDB)
+	incTxRunner := txrunner.NewIncidentsTxRunner(incEow)
+	incSvc := incidents.NewService(incRepo, incTxRunner)
 	incHandlers := handlers.NewIncidents(incSvc)
 
 	// --- HTTP ---

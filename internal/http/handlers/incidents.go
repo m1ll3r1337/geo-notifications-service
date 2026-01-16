@@ -207,7 +207,7 @@ type locationCheckResponse struct {
 }
 
 func (h *Incidents) Check(ctx *gin.Context) {
-	const op = "location.http.check"
+	const op = "incidents.http.check"
 
 	var req locationCheckRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
@@ -221,31 +221,28 @@ func (h *Incidents) Check(ctx *gin.Context) {
 		Limit:  req.Limit,
 	}
 
-	items, err := h.svc.FindNearby(ctx.Request.Context(), cmd)
+	res, err := h.svc.CheckAndRecord(ctx.Request.Context(), cmd)
 	if err != nil {
 		ctx.Error(err)
 		return
 	}
 
-	httpIncidents := make([]nearbyIncident, 0, len(items))
-	for _, item := range items {
+	httpIncidents := make([]nearbyIncident, 0, len(res.Incidents))
+	for _, it := range res.Incidents {
 		httpIncidents = append(httpIncidents, nearbyIncident{
-			IncidentID:     item.IncidentID,
-			DistanceMeters: item.DistanceMeters,
-			Title:          item.Title,
-			Description:    item.Description,
-			Center: point{
-				Lat: item.Center.Lat,
-				Lon: item.Center.Lon,
-			},
-			Radius:    item.Radius,
-			CreatedAt: item.CreatedAt,
-			UpdatedAt: item.UpdatedAt,
+			IncidentID:     it.IncidentID,
+			DistanceMeters: it.DistanceMeters,
+			Title:          it.Title,
+			Description:    it.Description,
+			Center:         point{Lat: it.Center.Lat, Lon: it.Center.Lon},
+			Radius:         it.Radius,
+			CreatedAt:      it.CreatedAt,
+			UpdatedAt:      it.UpdatedAt,
 		})
 	}
 
 	ctx.JSON(http.StatusOK, locationCheckResponse{
-		Count:     len(items),
+		Count:     res.Count,
 		Incidents: httpIncidents,
 	})
 }
