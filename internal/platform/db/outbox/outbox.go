@@ -2,7 +2,6 @@ package outboxdb
 
 import (
 	"context"
-	"database/sql"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -58,41 +57,48 @@ func (r *Repository) ClaimBatch(ctx context.Context, limit int) ([]Event, error)
 
 	var rows []Event
 	if err := sqlx.SelectContext(ctx, r.exec, &rows, q, limit); err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
-		}
 		return nil, dberrs.Map(err, op)
 	}
 	return rows, nil
 }
 
-func (r *Repository) MarkDispatched(ctx context.Context, id int64) error {
-	const op = "outbox.repo.mark_dispatched"
+func (r *Repository) MarkDispatchedBatch(ctx context.Context, ids []int64) error {
+	const op = "outbox.repo.mark_dispatched_batch"
+
+	if len(ids) == 0 {
+		return nil
+	}
 
 	const q = `
         UPDATE webhook_outbox
         SET status = 'dispatched',
+            processing_until = NULL,
             updated_at = NOW()
-        WHERE id = $1;
+        WHERE id = ANY($1);
     `
-	if _, err := r.exec.ExecContext(ctx, q, id); err != nil {
+	if _, err := r.exec.ExecContext(ctx, q, ids); err != nil {
 		return dberrs.Map(err, op)
 	}
 	return nil
 }
 
-func (r *Repository) MarkRetry(ctx context.Context, id int64, nextAttemptAt time.Time, lastErr string) error {
-	const op = "outbox.repo.mark_retry"
+func (r *Repository) MarkRetryBatch(ctx context.Context, ids []int64, nextAttemptAt time.Time, lastErr string) error {
+	const op = "outbox.repo.mark_retry_batch"
+
+	if len(ids) == 0 {
+		return nil
+	}
 
 	const q = `
         UPDATE webhook_outbox
         SET status = 'pending',
+            processing_until = NULL,
             next_attempt_at = $2,
             last_error = $3,
             updated_at = NOW()
-        WHERE id = $1;
+        WHERE id = ANY($1);
     `
-	if _, err := r.exec.ExecContext(ctx, q, id, nextAttemptAt, lastErr); err != nil {
+	if _, err := r.exec.ExecContext(ctx, q, ids, nextAttemptAt, lastErr); err != nil {
 		return dberrs.Map(err, op)
 	}
 	return nil

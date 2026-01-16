@@ -23,7 +23,7 @@ type Checker interface {
 }
 
 type OutboxRepository interface {
-	Enqueue(ctx context.Context, eventType string, payloadJSON string, nextAttemptAt time.Time) error
+	Enqueue(ctx context.Context, eventType string, payloadJSON string) error
 }
 
 type TxRunner interface {
@@ -167,7 +167,7 @@ func (s *Service) CheckAndRecord(ctx context.Context, cmd incidents.CheckCommand
 			return errs.Wrap(op+".marshal_event", err)
 		}
 
-		if err := outbox.Enqueue(ctx, "location_check", string(b), time.Now()); err != nil {
+		if err := outbox.Enqueue(ctx, "location_check", string(b)); err != nil {
 			return errs.Wrap(op+".enqueue_outbox", err)
 		}
 

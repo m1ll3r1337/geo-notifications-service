@@ -3,7 +3,6 @@ package txrunner
 import (
 	"context"
 	"database/sql"
-	"time"
 
 	incidentsapp "github.com/m1ll3r1337/geo-notifications-service/internal/app/incidents"
 	incidentsdb "github.com/m1ll3r1337/geo-notifications-service/internal/platform/db/incidents"
@@ -35,6 +34,6 @@ type outboxWriterAdapter struct {
 	repo *outboxdb.Repository
 }
 
-func (a outboxWriterAdapter) Enqueue(ctx context.Context, eventType string, payloadJSON string, nextAttemptAt time.Time) error {
+func (a outboxWriterAdapter) Enqueue(ctx context.Context, eventType string, payloadJSON string) error {
 	return a.repo.Enqueue(ctx, eventType, payloadJSON)
 }
