@@ -36,9 +36,5 @@ type outboxWriterAdapter struct {
 }
 
 func (a outboxWriterAdapter) Enqueue(ctx context.Context, eventType string, payloadJSON string, nextAttemptAt time.Time) error {
-	return a.repo.Enqueue(ctx, outboxdb.EnqueueParams{
-		EventType:     eventType,
-		PayloadJSON:   payloadJSON,
-		NextAttemptAt: nextAttemptAt,
-	})
+	return a.repo.Enqueue(ctx, eventType, payloadJSON)
 }

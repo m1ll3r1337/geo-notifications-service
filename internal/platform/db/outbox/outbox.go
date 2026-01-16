@@ -16,21 +16,14 @@ type Repository struct {
 
 func New(exec sqlx.ExtContext) *Repository { return &Repository{exec: exec} }
 
-type EnqueueParams struct {
-	EventType     string
-	PayloadJSON   string
-	NextAttemptAt time.Time
-	ProcessingFor time.Duration
-}
-
-func (r *Repository) Enqueue(ctx context.Context, p EnqueueParams) error {
+func (r *Repository) Enqueue(ctx context.Context, eventType string, payloadJSON string) error {
 	const op = "outbox.repo.enqueue"
 
 	const q = `
-        INSERT INTO webhook_outbox (event_type, payload, status, attempts, next_attempt_at, processing_until, last_error, created_at, updated_at)
-        VALUES ($1, $2::jsonb, 'pending', 0, $3, NULL, NULL, NOW(), NOW());
+        INSERT INTO webhook_outbox (event_type, payload, status, attempts, next_attempt_at, created_at, updated_at)
+        VALUES ($1, $2::jsonb, 'pending', 0, NOW(), NOW(), NOW());
     `
-	if _, err := r.exec.ExecContext(ctx, q, p.EventType, p.PayloadJSON, p.NextAttemptAt); err != nil {
+	if _, err := r.exec.ExecContext(ctx, q, eventType, payloadJSON); err != nil {
 		return dberrs.Map(err, op)
 	}
 	return nil
@@ -43,50 +36,42 @@ type Event struct {
 	Attempts    int    `db:"attempts"`
 }
 
-func (r *Repository) ClaimOne(ctx context.Context, processingFor time.Duration) (*Event, error) {
-	const op = "outbox.repo.claim_one"
+func (r *Repository) ClaimBatch(ctx context.Context, limit int) ([]Event, error) {
+	const op = "outbox.repo.claim_batch"
 
 	const q = `
         WITH claimed AS (
-            UPDATE webhook_outbox
-            SET status = 'processing',
-                attempts = attempts + 1,
-                processing_until = NOW() + ($1::text)::interval,
-                updated_at = NOW()
-            WHERE id = (
-                SELECT id
-                FROM webhook_outbox
-                WHERE
-                    (status = 'pending' AND next_attempt_at <= NOW())
-                    OR (status = 'processing' AND processing_until IS NOT NULL AND processing_until <= NOW())
-                ORDER BY id
-                FOR UPDATE SKIP LOCKED
-                LIMIT 1
-            )
-            RETURNING id, event_type, payload, attempts
+            SELECT id
+            FROM webhook_outbox
+            WHERE status = 'pending' AND next_attempt_at <= NOW()
+            ORDER BY id
+            FOR UPDATE SKIP LOCKED
+            LIMIT $1
         )
-        SELECT id, event_type, payload, attempts FROM claimed;
+        UPDATE webhook_outbox o
+        SET attempts = attempts + 1,
+            updated_at = NOW()
+        FROM claimed
+        WHERE o.id = claimed.id
+        RETURNING o.id, o.event_type, o.payload, o.attempts;
     `
 
-	intervalText := processingFor.String()
-
-	var ev Event
-	if err := sqlx.GetContext(ctx, r.exec, &ev, q, intervalText); err != nil {
+	var rows []Event
+	if err := sqlx.SelectContext(ctx, r.exec, &rows, q, limit); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
 		return nil, dberrs.Map(err, op)
 	}
-	return &ev, nil
+	return rows, nil
 }
 
-func (r *Repository) MarkSucceeded(ctx context.Context, id int64) error {
-	const op = "outbox.repo.mark_succeeded"
+func (r *Repository) MarkDispatched(ctx context.Context, id int64) error {
+	const op = "outbox.repo.mark_dispatched"
 
 	const q = `
         UPDATE webhook_outbox
-        SET status = 'succeeded',
-            processing_until = NULL,
+        SET status = 'dispatched',
             updated_at = NOW()
         WHERE id = $1;
     `
@@ -103,7 +88,6 @@ func (r *Repository) MarkRetry(ctx context.Context, id int64, nextAttemptAt time
         UPDATE webhook_outbox
         SET status = 'pending',
             next_attempt_at = $2,
-            processing_until = NULL,
             last_error = $3,
             updated_at = NOW()
         WHERE id = $1;
@@ -120,7 +104,6 @@ func (r *Repository) MarkDead(ctx context.Context, id int64, lastErr string) err
 	const q = `
         UPDATE webhook_outbox
         SET status = 'dead',
-            processing_until = NULL,
             last_error = $2,
             updated_at = NOW()
         WHERE id = $1;
