@@ -1,4 +1,4 @@
-.PHONY: lint build run migrate-up migrate-down migrate-version
+.PHONY: lint build run migrate-up migrate-down migrate-version run-webhook-server
 
 GEO_DB_URL?=postgres://postgres:postgres@localhost:5432/geo_not?sslmode=disable
 
@@ -22,3 +22,6 @@ migrate-version:
 
 test-integration:
 	go test -tags=integration ./... -count=1
+
+run-webhook-server:
+	WEBHOOK_URL=http://localhost:9090/webhook go run cmd/webhook-test/main.go

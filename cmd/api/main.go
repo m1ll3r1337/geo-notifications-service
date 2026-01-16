@@ -18,6 +18,11 @@ import (
 	"github.com/m1ll3r1337/geo-notifications-service/internal/platform/db/txrunner"
 	"github.com/m1ll3r1337/geo-notifications-service/internal/platform/db/uow"
 	"github.com/m1ll3r1337/geo-notifications-service/internal/platform/logger"
+	"github.com/m1ll3r1337/geo-notifications-service/internal/platform/redis/queue"
+	"github.com/m1ll3r1337/geo-notifications-service/internal/workers/outboxrelay"
+	webhookworker "github.com/m1ll3r1337/geo-notifications-service/internal/workers/webhook"
+	"github.com/redis/go-redis/v9"
+	"golang.org/x/sync/errgroup"
 )
 
 func main() {
@@ -54,6 +59,19 @@ func main() {
 		return
 	}
 
+	// --- Redis ---
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     cfg.Redis.Addr,
+		Password: cfg.Redis.Password,
+		DB:       cfg.Redis.DB,
+	})
+	defer rdb.Close()
+
+	if err := rdb.Ping(ctx).Err(); err != nil {
+		log.Error(ctx, "startup", "status", "redis init failed", "error", err)
+		return
+	}
+
 	// --- Incidents module wiring ---
 	incRepo := incidentsdb.New(sqlDB)
 	incEow := uow.New(sqlDB)
@@ -74,6 +92,24 @@ func main() {
 		serverErrors <- s.Start()
 	}()
 
+	// --- Workers ---
+	workerCtx, workerCancel := context.WithCancel(ctx)
+
+	outboxRelay := outboxrelay.New(sqlDB, queue.New(rdb, cfg.Workers.OutboxRelay.Stream), log)
+	webhookWorker := webhookworker.New(
+		rdb,
+		cfg.Workers.Webhook.Stream,
+		cfg.Workers.Webhook.Group,
+		cfg.Workers.Webhook.Consumer,
+		cfg.Workers.Webhook.URL,
+		log,
+	)
+
+	g, gctx := errgroup.WithContext(workerCtx)
+
+	g.Go(func() error { return outboxRelay.Run(gctx) })
+	g.Go(func() error { return webhookWorker.Run(gctx) })
+
 	select {
 	case err := <-serverErrors:
 		log.Error(ctx, "startup", "status", "server failed", "error", err)
@@ -85,9 +121,15 @@ func main() {
 		shutdownCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
 
+		workerCancel()
+
 		if err := s.Shutdown(shutdownCtx); err != nil {
 			log.Error(ctx, "could not stop server gracefully", "error", err)
 			_ = s.Close()
 		}
+	}
+
+	if err := g.Wait(); err != nil {
+		log.Error(ctx, "shutdown", "status", "workers failed to stop gracefully", "error", err)
 	}
 }
