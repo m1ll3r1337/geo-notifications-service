@@ -16,6 +16,7 @@ type IncidentsRepository interface {
 	Update(ctx context.Context, id int64, in incidents.UpdateIncident) (incidents.Incident, error)
 	Deactivate(ctx context.Context, id int64) error
 	FindNearby(ctx context.Context, p incidents.Point, limit int) ([]incidents.NearbyIncident, error)
+	CountUniqueUsersSince(ctx context.Context, since time.Time) (int, error)
 }
 
 type Checker interface {
@@ -178,4 +179,19 @@ func (s *Service) CheckAndRecord(ctx context.Context, cmd incidents.CheckCommand
 	}
 
 	return &CheckResult{Incidents: inc, Count: len(inc)}, nil
+}
+
+func (s *Service) Stats(ctx context.Context, window time.Duration) (int, error) {
+	const op = "incidents.service.stats"
+
+	if window <= 0 {
+		return 0, errs.E(errs.KindInvalid, "INVALID_WINDOW", op, "window must be > 0", map[string]string{"window": "must be > 0"}, nil)
+	}
+
+	since := time.Now().UTC().Add(-window)
+	count, err := s.incRepo.CountUniqueUsersSince(ctx, since)
+	if err != nil {
+		return 0, errs.Wrap(op, err)
+	}
+	return count, nil
 }

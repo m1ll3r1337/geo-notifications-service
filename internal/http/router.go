@@ -29,8 +29,8 @@ func NewRouter(log *logger.Logger, level logger.Level, incidents *handlers.Incid
 
 func setupRoutes(r *gin.Engine, incidents *handlers.Incidents, apiKey string) {
 	v1 := r.Group("/api/v1")
-
-	inc := v1.Group("/incidents", middleware.APIKey(apiKey))
+	protected := v1.Group("", middleware.APIKey(apiKey))
+	inc := protected.Group("/incidents")
 	{
 		inc.POST("", incidents.Create)
 		inc.GET("", incidents.List)
@@ -38,6 +38,7 @@ func setupRoutes(r *gin.Engine, incidents *handlers.Incidents, apiKey string) {
 		inc.PUT("/:id", incidents.Update)
 		inc.PATCH("/:id", incidents.Update)
 		inc.DELETE("/:id", incidents.Deactivate)
+		inc.GET("/stats", incidents.Stats)
 	}
 
 	v1.POST("/location/check", incidents.Check)

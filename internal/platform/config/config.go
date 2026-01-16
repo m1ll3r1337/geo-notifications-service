@@ -29,10 +29,10 @@ type Config struct {
 		Timeout  time.Duration `default:"5s"`
 	}
 	Security struct {
-		APIKey string `default:"secret"`
+		ApiKey string `default:"secret"`
 	}
 	Stats struct {
-		WindowMinutes int `default:"60"`
+		TimeWindowMinutes int `default:"60"`
 	}
 	Workers struct {
 		Webhook struct {

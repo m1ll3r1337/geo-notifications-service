@@ -297,3 +297,18 @@ func (r *Repository) RecordCheck(ctx context.Context, userID string, p incidents
 
 	return checkID, nil
 }
+
+func (r *Repository) CountUniqueUsersSince(ctx context.Context, since time.Time) (int, error) {
+	const op = "incidents.repo.count_unique_users_since"
+
+	const q = `
+        SELECT COUNT(DISTINCT user_id)
+        FROM location_checks
+        WHERE created_at >= $1;
+    `
+	var count int
+	if err := sqlx.GetContext(ctx, r.exec, &count, q, since); err != nil {
+		return 0, dberrs.Map(err, op)
+	}
+	return count, nil
+}

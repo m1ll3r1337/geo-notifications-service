@@ -77,10 +77,10 @@ func main() {
 	incEow := uow.New(sqlDB)
 	incTxRunner := txrunner.NewIncidentsTxRunner(incEow)
 	incSvc := incidents.NewService(incRepo, incTxRunner)
-	incHandlers := handlers.NewIncidents(incSvc)
+	incHandlers := handlers.NewIncidents(incSvc, time.Duration(cfg.Stats.TimeWindowMinutes)*time.Minute)
 
 	// --- HTTP ---
-	router := http.NewRouter(log, logLevel, incHandlers, cfg.Security.APIKey)
+	router := http.NewRouter(log, logLevel, incHandlers, cfg.Security.ApiKey)
 	s := http.NewServer(http.Config{Addr: cfg.HTTP.Addr}, router, logger.NewStdLogger(log, logger.LevelError))
 
 	serverErrors := make(chan error, 1)

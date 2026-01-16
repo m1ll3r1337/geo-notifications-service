@@ -13,11 +13,12 @@ import (
 )
 
 type Incidents struct {
-	svc *incidentsapp.Service
+	svc         *incidentsapp.Service
+	statsWindow time.Duration
 }
 
-func NewIncidents(svc *incidentsapp.Service) *Incidents {
-	return &Incidents{svc: svc}
+func NewIncidents(svc *incidentsapp.Service, statsWindow time.Duration) *Incidents {
+	return &Incidents{svc: svc, statsWindow: statsWindow}
 }
 
 type point struct {
@@ -245,4 +246,20 @@ func (h *Incidents) Check(ctx *gin.Context) {
 		Count:     res.Count,
 		Incidents: httpIncidents,
 	})
+}
+
+type statsResponse struct {
+	UserCount int `json:"user_count"`
+}
+
+func (h *Incidents) Stats(ctx *gin.Context) {
+	const op = "incidents.http.stats"
+
+	count, err := h.svc.Stats(ctx, h.statsWindow)
+	if err != nil {
+		ctx.Error(errs.Wrap(op, err))
+		return
+	}
+
+	ctx.JSON(http.StatusOK, statsResponse{UserCount: count})
 }
