@@ -14,10 +14,12 @@ import (
 	"github.com/m1ll3r1337/geo-notifications-service/internal/http/handlers"
 	"github.com/m1ll3r1337/geo-notifications-service/internal/platform/config"
 	"github.com/m1ll3r1337/geo-notifications-service/internal/platform/db"
+	healthdb "github.com/m1ll3r1337/geo-notifications-service/internal/platform/db/health"
 	incidentsdb "github.com/m1ll3r1337/geo-notifications-service/internal/platform/db/incidents"
 	"github.com/m1ll3r1337/geo-notifications-service/internal/platform/db/txrunner"
 	"github.com/m1ll3r1337/geo-notifications-service/internal/platform/db/uow"
 	"github.com/m1ll3r1337/geo-notifications-service/internal/platform/logger"
+	healthredis "github.com/m1ll3r1337/geo-notifications-service/internal/platform/redis/health"
 	"github.com/m1ll3r1337/geo-notifications-service/internal/platform/redis/queue"
 	"github.com/m1ll3r1337/geo-notifications-service/internal/workers/outboxrelay"
 	webhookworker "github.com/m1ll3r1337/geo-notifications-service/internal/workers/webhook"
@@ -79,8 +81,21 @@ func main() {
 	incSvc := incidents.NewService(incRepo, incTxRunner)
 	incHandlers := handlers.NewIncidents(incSvc, time.Duration(cfg.Stats.TimeWindowMinutes)*time.Minute)
 
+	// --- System ---
+	sysHandler := handlers.NewSystem(
+		log,
+		handlers.Dependency{
+			Name:   "postgres",
+			Pinger: healthdb.NewPostgresPinger(sqlDB),
+		},
+		handlers.Dependency{
+			Name:   "redis",
+			Pinger: healthredis.NewRedisPinger(rdb),
+		},
+	)
+
 	// --- HTTP ---
-	router := http.NewRouter(log, logLevel, incHandlers, cfg.Security.ApiKey)
+	router := http.NewRouter(log, logLevel, incHandlers, sysHandler, cfg.Security.ApiKey)
 	s := http.NewServer(http.Config{Addr: cfg.HTTP.Addr}, router, logger.NewStdLogger(log, logger.LevelError))
 
 	serverErrors := make(chan error, 1)

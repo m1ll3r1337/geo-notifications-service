@@ -8,7 +8,7 @@ import (
 	"github.com/m1ll3r1337/geo-notifications-service/internal/platform/middleware"
 )
 
-func NewRouter(log *logger.Logger, level logger.Level, incidents *handlers.Incidents, apiKey string) *gin.Engine {
+func NewRouter(log *logger.Logger, level logger.Level, incidents *handlers.Incidents, system *handlers.System, apiKey string) *gin.Engine {
 	if level == logger.LevelDebug {
 		gin.SetMode(gin.DebugMode)
 	} else {
@@ -23,12 +23,15 @@ func NewRouter(log *logger.Logger, level logger.Level, incidents *handlers.Incid
 	r.Use(middleware.Error(log))
 	r.Use(middleware.Recovery(log))
 
-	setupRoutes(r, incidents, apiKey)
+	setupRoutes(r, incidents, system, apiKey)
 	return r
 }
 
-func setupRoutes(r *gin.Engine, incidents *handlers.Incidents, apiKey string) {
+func setupRoutes(r *gin.Engine, incidents *handlers.Incidents, system *handlers.System, apiKey string) {
 	v1 := r.Group("/api/v1")
+
+	v1.GET("/health", system.Health)
+
 	protected := v1.Group("", middleware.APIKey(apiKey))
 	inc := protected.Group("/incidents")
 	{
