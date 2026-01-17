@@ -14,6 +14,9 @@ type Config struct {
 	Log struct {
 		Level string `default:"info"`
 	}
+	Cache struct {
+		ActiveIncidentsTTLSeconds int `default:"60"`
+	}
 	DB struct {
 		URL             string        `required:"true"`
 		MaxIdleConns    int           `default:"2"`
@@ -25,7 +28,8 @@ type Config struct {
 	Redis struct {
 		Addr     string        `default:"localhost:6379"`
 		Password string        `default:""`
-		DB       int           `default:"0"`
+		CacheDB  int           `default:"0"`
+		QueueDB  int           `default:"1"`
 		Timeout  time.Duration `default:"5s"`
 	}
 	Security struct {

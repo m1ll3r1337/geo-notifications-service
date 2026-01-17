@@ -19,6 +19,7 @@ import (
 	"github.com/m1ll3r1337/geo-notifications-service/internal/platform/db/txrunner"
 	"github.com/m1ll3r1337/geo-notifications-service/internal/platform/db/uow"
 	"github.com/m1ll3r1337/geo-notifications-service/internal/platform/logger"
+	incidentscache "github.com/m1ll3r1337/geo-notifications-service/internal/platform/redis/cache"
 	healthredis "github.com/m1ll3r1337/geo-notifications-service/internal/platform/redis/health"
 	"github.com/m1ll3r1337/geo-notifications-service/internal/platform/redis/queue"
 	"github.com/m1ll3r1337/geo-notifications-service/internal/workers/outboxrelay"
@@ -61,24 +62,44 @@ func main() {
 		return
 	}
 
-	// --- Redis ---
-	rdb := redis.NewClient(&redis.Options{
+	// --- Redis Cache ---
+	cacheRdb := redis.NewClient(&redis.Options{
 		Addr:     cfg.Redis.Addr,
 		Password: cfg.Redis.Password,
-		DB:       cfg.Redis.DB,
+		DB:       cfg.Redis.CacheDB,
 	})
-	defer rdb.Close()
+	defer cacheRdb.Close()
 
-	if err := rdb.Ping(ctx).Err(); err != nil {
-		log.Error(ctx, "startup", "status", "redis init failed", "error", err)
+	if err := cacheRdb.Ping(ctx).Err(); err != nil {
+		log.Error(ctx, "startup", "status", "redis cache init failed", "error", err)
+		return
+	}
+
+	// --- Redis Queue ---
+	queueRdb := redis.NewClient(&redis.Options{
+		Addr:     cfg.Redis.Addr,
+		Password: cfg.Redis.Password,
+		DB:       cfg.Redis.QueueDB,
+	})
+	defer queueRdb.Close()
+
+	if err := queueRdb.Ping(ctx).Err(); err != nil {
+		log.Error(ctx, "startup", "status", "redis queue init failed", "error", err)
 		return
 	}
 
 	// --- Incidents module wiring ---
-	incRepo := incidentsdb.New(sqlDB)
+	baseRepo := incidentsdb.New(sqlDB)
+
+	cachedRepo := incidentscache.New(
+		cacheRdb,
+		baseRepo,
+		incidentscache.WithTTL(time.Duration(cfg.Cache.ActiveIncidentsTTLSeconds)*time.Second),
+		incidentscache.WithLogger(log),
+	)
 	incEow := uow.New(sqlDB)
 	incTxRunner := txrunner.NewIncidentsTxRunner(incEow)
-	incSvc := incidents.NewService(incRepo, incTxRunner)
+	incSvc := incidents.NewService(cachedRepo, incTxRunner)
 	incHandlers := handlers.NewIncidents(incSvc, time.Duration(cfg.Stats.TimeWindowMinutes)*time.Minute)
 
 	// --- System ---
@@ -89,8 +110,12 @@ func main() {
 			Pinger: healthdb.NewPostgresPinger(sqlDB),
 		},
 		handlers.Dependency{
-			Name:   "redis",
-			Pinger: healthredis.NewRedisPinger(rdb),
+			Name:   "redis_queue",
+			Pinger: healthredis.NewRedisPinger(queueRdb),
+		},
+		handlers.Dependency{
+			Name:   "redis_cache",
+			Pinger: healthredis.NewRedisPinger(cacheRdb),
 		},
 	)
 
@@ -110,9 +135,9 @@ func main() {
 	// --- Workers ---
 	workerCtx, workerCancel := context.WithCancel(ctx)
 
-	outboxRelay := outboxrelay.New(sqlDB, queue.New(rdb, cfg.Workers.OutboxRelay.Stream), log)
+	outboxRelay := outboxrelay.New(sqlDB, queue.New(queueRdb, cfg.Workers.OutboxRelay.Stream), log)
 	webhookWorker := webhookworker.New(
-		rdb,
+		queueRdb,
 		cfg.Workers.Webhook.Stream,
 		cfg.Workers.Webhook.Group,
 		cfg.Workers.Webhook.Consumer,
