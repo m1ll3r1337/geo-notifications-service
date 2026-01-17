@@ -1,0 +1,70 @@
+services:
+  db:
+    image: postgis/postgis:15-3.4
+    env_file:
+      - ./.env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:8.4
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    image: migrate/migrate:v4.18.1
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./migrations:/migrations:ro
+    env_file:
+      - ./.env
+    entrypoint:
+      ["migrate", "-path", "/migrations", "-database", "${GEO_DB_URL}"]
+    command: ["up"]
+
+  api:
+    build:
+      context: .
+      target: api
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    env_file:
+      - ./.env
+    ports:
+      - "8080:8080"
+
+  webhook-test:
+    build:
+      context: .
+      target: webhook-test
+    env_file:
+      - ./.env
+    ports:
+      - "9090:9090"
+
+volumes:
+  db_data:
+  redis_data:
