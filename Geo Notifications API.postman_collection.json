@@ -1,0 +1,475 @@
+{
+	"info": {
+		"_postman_id": "07d9e6b5-5077-45c4-a9ac-225f35402af0",
+		"name": "Geo Notifications API",
+		"description": "API collection for testing geo-notifications-service endpoints",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "32837052",
+		"_collection_link": "https://me0000-9695.postman.co/workspace/geo-service~86f10a0c-0781-4032-8dc7-0b186fca2172/collection/32837052-07d9e6b5-5077-45c4-a9ac-225f35402af0?action=share&source=collection_link&creator=32837052"
+	},
+	"item": [
+		{
+			"name": "Incidents",
+			"item": [
+				{
+					"name": "Create Incident",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    var jsonData = pm.response.json();",
+									"    pm.environment.set('incident_id', jsonData.id);",
+									"    pm.test('Incident created successfully', function () {",
+									"        pm.expect(pm.response.code).to.equal(201);",
+									"        pm.expect(jsonData.title).to.equal('Flooding in downtown');",
+									"        pm.expect(jsonData.active).to.equal(true);",
+									"    });",
+									"}"
+								],
+								"type": "text/javascript",
+								"packages": {},
+								"requests": {}
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"title\": \"Flooding in downtown\",\n  \"description\": \"Major flood warning in the city center\",\n  \"center\": {\n    \"lat\": 55.7558,\n    \"lon\": 37.6173\n  },\n  \"radius\": 500\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/incidents",
+							"host": [
+								"{{BASE_URL}}"
+							],
+							"path": [
+								"incidents"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Incident by ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/incidents/{{incident_id}}",
+							"host": [
+								"{{BASE_URL}}"
+							],
+							"path": [
+								"incidents",
+								"{{incident_id}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List Incidents",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/incidents?limit=50&offset=0&active_only=true",
+							"host": [
+								"{{BASE_URL}}"
+							],
+							"path": [
+								"incidents"
+							],
+							"query": [
+								{
+									"key": "limit",
+									"value": "50"
+								},
+								{
+									"key": "offset",
+									"value": "0"
+								},
+								{
+									"key": "active_only",
+									"value": "true"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Incident",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"title\": \"Updated flooding alert\",\n  \"radius\": 750\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/incidents/{{incident_id}}",
+							"host": [
+								"{{BASE_URL}}"
+							],
+							"path": [
+								"incidents",
+								"{{incident_id}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Deactivate Incident",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/incidents/{{incident_id}}",
+							"host": [
+								"{{BASE_URL}}"
+							],
+							"path": [
+								"incidents",
+								"{{incident_id}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get stats",
+					"request": {
+						"method": "GET",
+						"header": []
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Validation Tests",
+			"item": [
+				{
+					"name": "Invalid Coordinates (lat > 90)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"title\": \"Invalid coords\",\n  \"description\": \"\",\n  \"center\": {\n    \"lat\": 95.0,\n    \"lon\": 37.0\n  },\n  \"radius\": 500\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/incidents",
+							"host": [
+								"{{BASE_URL}}"
+							],
+							"path": [
+								"incidents"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Empty Title",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"title\": \"\",\n  \"description\": \"No title\",\n  \"center\": {\n    \"lat\": 55.75,\n    \"lon\": 37.61\n  },\n  \"radius\": 500\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/incidents",
+							"host": [
+								"{{BASE_URL}}"
+							],
+							"path": [
+								"incidents"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Invalid Radius (<= 0)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"title\": \"Invalid radius\",\n  \"description\": \"\",\n  \"center\": {\n    \"lat\": 55.75,\n    \"lon\": 37.61\n  },\n  \"radius\": -100\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/incidents",
+							"host": [
+								"{{BASE_URL}}"
+							],
+							"path": [
+								"incidents"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Not Found (ID 999999)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{BASE_URL}}/incidents/999999",
+							"host": [
+								"{{BASE_URL}}"
+							],
+							"path": [
+								"incidents",
+								"999999"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Location",
+			"item": [
+				{
+					"name": "Check Location (valid)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"  var jsonData = pm.response.json();",
+									"  pm.environment.set('last_check_count', jsonData.count);",
+									"  if (jsonData.incidents && jsonData.incidents.length > 0) {",
+									"    var first = jsonData.incidents[0];",
+									"    var id = first.IncidentID || first.incident_id || first.id;",
+									"    if (id) { pm.environment.set('last_incident_id', id); }",
+									"  }",
+									"  pm.test('Location check OK', function () { pm.expect(pm.response.code).to.equal(200); });",
+									"}"
+								],
+								"type": "text/javascript",
+								"packages": {},
+								"requests": {}
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"user_id\": \"{{USER_ID}}\",\n  \"location\": { \"lat\": 55.7558, \"lon\": 37.6173 },\n  \"limit\": 10\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/location/check",
+							"host": [
+								"{{BASE_URL}}"
+							],
+							"path": [
+								"location",
+								"check"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Check Location - Invalid Coords",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Invalid coords -> 400', function () { pm.expect(pm.response.code).to.be.oneOf([400,422]); });"
+								],
+								"type": "text/javascript",
+								"packages": {},
+								"requests": {}
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"user_id\": \"{{USER_ID}}\",\n  \"location\": { \"lat\": 190.0, \"lon\": 37.0 }\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/location/check",
+							"host": [
+								"{{BASE_URL}}"
+							],
+							"path": [
+								"location",
+								"check"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Check Location - Empty user_id",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Empty user_id -> 400', function () { pm.expect(pm.response.code).to.be.oneOf([400,422]); });"
+								],
+								"type": "text/javascript",
+								"packages": {},
+								"requests": {}
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"user_id\": \"\",\n  \"location\": { \"lat\": 55.75, \"lon\": 37.61 }\n}"
+						},
+						"url": {
+							"raw": "{{BASE_URL}}/location/check",
+							"host": [
+								"{{BASE_URL}}"
+							],
+							"path": [
+								"location",
+								"check"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "System",
+			"item": [
+				{
+					"name": "Health",
+					"request": {
+						"method": "GET",
+						"header": []
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"auth": {
+		"type": "apikey",
+		"apikey": [
+			{
+				"key": "value",
+				"value": "secret",
+				"type": "string"
+			},
+			{
+				"key": "key",
+				"value": "X-API-KEY",
+				"type": "string"
+			}
+		]
+	},
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"packages": {},
+				"requests": {},
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"packages": {},
+				"requests": {},
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "BASE_URL",
+			"value": "http://172.30.183.224:8080/api/v1"
+		},
+		{
+			"key": "incident_id",
+			"value": "1"
+		},
+		{
+			"key": "USER_ID",
+			"value": "2"
+		},
+		{
+			"key": "last_check_count",
+			"value": ""
+		},
+		{
+			"key": "last_incident_id",
+			"value": ""
+		}
+	]
+}
